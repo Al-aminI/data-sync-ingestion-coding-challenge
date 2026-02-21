@@ -1,3 +1,71 @@
+# DataSync Ingestion Pipeline -- Solution
+
+**Result**: 3,050,452 events ingested in ~19.5 minutes (~2,600 events/sec average)
+
+## How to Run
+
+```bash
+sh run-ingestion.sh
+```
+
+This builds the Docker images, starts PostgreSQL and the ingestion service, and monitors progress. The script waits for `"ingestion complete"` in the container logs.
+
+Alternatively:
+
+```bash
+docker compose up -d --build
+docker logs -f assignment-ingestion
+```
+
+## Architecture
+
+20 parallel workers partition the 3M-event dataset by timestamp using fabricated cursors. Each worker fetches 5,000 events per request from a high-throughput stream endpoint discovered by reverse-engineering the dashboard's JavaScript bundle. Events are bulk-loaded into an UNLOGGED PostgreSQL table via the COPY protocol. A shared token-bucket rate limiter coordinates workers to avoid API throttling.
+
+```
+Orchestrator
+  ├── StreamTokenManager (auto-refresh every 4 min)
+  ├── CursorFactory (20 fabricated cursors across 31 days)
+  ├── SharedRateLimiter (0.7 req/sec, burst 15, adaptive backoff)
+  └── 20 Workers
+       ├── fetch stream endpoint (limit=5000)
+       ├── COPY FROM STDIN to PostgreSQL
+       └── checkpoint progress for resumability
+```
+
+Key files: `packages/ingestion/src/orchestrator.ts` (main), `worker.ts` (fetch loop), `stream-token-manager.ts` (token lifecycle), `cursor-factory.ts` (partitioning), `rate-limiter.ts` (throttling), `db/writer.ts` (COPY protocol).
+
+## API Discoveries
+
+1. **Dashboard JS bundle** (`/assets/index-1KlV7jRD.js`) revealed undocumented endpoints including a stream access token issuer and a high-throughput feed endpoint.
+2. **Stream endpoint** (`/api/v1/events/d4ta/x7k9/feed`) -- no visible rate limit headers, ~4x throughput vs standard endpoint. Requires a short-lived token obtained via `POST /internal/dashboard/stream-access` with browser-like headers.
+3. **Fabricated cursors** -- cursors are base64 JSON (`{id, ts, v:2, exp}`). Setting `ts` to arbitrary timestamps enables parallel partitioned fetching across the dataset.
+4. **Mixed timestamps** -- events use both Unix milliseconds (number) and ISO 8601 (string) formats. Normalized during ingestion.
+5. **Rate limits**: header auth = 10 req/min, query param auth = 5 req/min. Cache HITs don't count against limits.
+
+Full exploration details in [RESEARCH.md](RESEARCH.md). Complete technical plan in [PLAN.md](PLAN.md).
+
+## What I Would Improve With More Time
+
+- **Adaptive rate limiter** that learns the optimal rate from 429 responses instead of fixed 0.7 req/sec
+- **Unit and integration tests** for cursor fabrication, timestamp normalization, and COPY writer
+- **Prometheus metrics** for request latency, throughput, and error rates
+- **Deduplication** at partition boundaries (currently ~50K overlapping events)
+- **Explore `/api/v1/events/bulk`** endpoint which returned 500 but might work with valid event IDs
+- **Dynamic worker scaling** -- reduce workers when rate limited, increase when clear
+
+## AI Tools Used
+
+This solution was built with **Cursor IDE** using **Claude** as the AI assistant. Claude helped with:
+- Systematic API exploration strategy and endpoint discovery
+- Reverse-engineering the dashboard JavaScript bundle for hidden endpoints
+- Designing the parallel partitioning architecture with fabricated cursors
+- Iterative debugging of rate limiting, cursor expiry, and connection timeout issues
+- Writing all TypeScript source code and Docker configuration
+
+---
+
+# Original Challenge README
+
 ## Overview
 
 Build a production-ready data ingestion system that extracts event data from the DataSync Analytics API and stores it in a PostgreSQL database.
