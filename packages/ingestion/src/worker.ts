@@ -4,7 +4,6 @@ import { SharedRateLimiter } from './rate-limiter';
 import { createFabricatedCursor } from './cursor-factory';
 import { config } from './config';
 import { log } from './logger';
-import { getTimestampMs } from './timestamp-normalizer';
 import { insertEvents } from './db/writer';
 import { saveCheckpoint, markWorkerComplete } from './db/checkpoint';
 import { ApiResponse, Partition } from './types';
@@ -133,9 +132,6 @@ export async function runWorker(
     cursor = result.pagination.nextCursor ?? null;
     await saveCheckpoint(pool, wid, cursor, totalEvents, partition.boundaryTs);
 
-    const lastEvent = result.data[result.data.length - 1];
-    const lastTs = getTimestampMs(lastEvent.timestamp);
-    if (lastTs <= partition.boundaryTs) break;
     if (!result.pagination.hasMore || !cursor) break;
   }
 

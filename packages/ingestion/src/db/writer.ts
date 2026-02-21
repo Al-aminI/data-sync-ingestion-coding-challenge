@@ -15,9 +15,17 @@ function escapeCopy(val: string | null | undefined): string {
 export async function insertEvents(pool: Pool, events: ApiEvent[]): Promise<void> {
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query(`
+      CREATE TEMP TABLE _staging (
+        id TEXT, session_id TEXT, user_id TEXT, type TEXT, name TEXT,
+        properties TEXT, timestamp TIMESTAMPTZ, device_type TEXT, browser TEXT
+      ) ON COMMIT DROP
+    `);
+
     const stream = client.query(
       copyFrom(
-        'COPY ingested_events (id, session_id, user_id, type, name, properties, timestamp, device_type, browser) FROM STDIN'
+        'COPY _staging (id, session_id, user_id, type, name, properties, timestamp, device_type, browser) FROM STDIN'
       )
     );
 
@@ -46,6 +54,16 @@ export async function insertEvents(pool: Pool, events: ApiEvent[]): Promise<void
 
     stream.end();
     await writePromise;
+
+    await client.query(`
+      INSERT INTO ingested_events
+      SELECT * FROM _staging
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
   } finally {
     client.release();
   }

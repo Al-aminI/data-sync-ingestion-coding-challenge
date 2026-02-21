@@ -4,7 +4,7 @@ import { log } from '../logger';
 export async function createSchema(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE UNLOGGED TABLE IF NOT EXISTS ingested_events (
-      id          TEXT NOT NULL,
+      id          TEXT NOT NULL UNIQUE,
       session_id  TEXT,
       user_id     TEXT,
       type        TEXT,
@@ -28,8 +28,8 @@ export async function createSchema(pool: Pool): Promise<void> {
 }
 
 export async function getEventCount(pool: Pool): Promise<number> {
-  const result = await pool.query('SELECT COUNT(*)::int AS count FROM ingested_events');
-  return result.rows[0].count;
+  const result = await pool.query('SELECT COUNT(*)::bigint AS count FROM ingested_events');
+  return Number(result.rows[0].count);
 }
 
 export async function addIndexes(pool: Pool): Promise<void> {

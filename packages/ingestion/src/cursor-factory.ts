@@ -21,12 +21,10 @@ export function createPartitions(
 
   for (let i = 0; i < workerCount; i++) {
     const startTs = latestTs - i * partitionMs;
-    const boundaryTs = latestTs - (i + 1) * partitionMs;
-
     partitions.push({
       workerId: i,
       startCursor: i === 0 ? null : createFabricatedCursor(Math.floor(startTs)),
-      boundaryTs: Math.floor(boundaryTs),
+      boundaryTs: Math.floor(latestTs - (i + 1) * partitionMs),
     });
   }
 

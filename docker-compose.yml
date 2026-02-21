@@ -37,7 +37,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ingestion
       API_BASE_URL: http://datasync-dev-alb-101078500.us-east-1.elb.amazonaws.com
-      API_KEY: ${API_KEY:}
+      API_KEY: ${API_KEY}
       WORKER_COUNT: "20"
       BATCH_SIZE: "5000"
       NODE_OPTIONS: "--max-old-space-size=2048"
